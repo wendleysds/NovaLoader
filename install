@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+
+"""
+ * SPDX-License-Identifier: MIT
+ *
+ * NovaLoader - Lightweight, modular, and configurable x86 bootloader for BIOS/MBR
+ *
+ * Copyright (c) 2026 Wendley Santos
+ *
+ * This file is part of NovaLoader.
+ * See the LICENSE file in the project root for license information.
+"""
+
+from dataclasses import dataclass
+from pathlib import Path
+from tools.mbr import MBREntry
+from tools.fat import FATFS
+import tools.fat_consts as fat_consts
+import argparse
+import struct
+
+LEGACY_MAX_LBA = 1024 * 256 * 63
+
+@dataclass
+class stage2_header:
+	secPerLBA: int
+	lbas_dword: list[int] # 0 ended
+
+	def __init__(self, secPerLBA: int, lbas_dword: list[int]):
+		self.secPerLBA = secPerLBA
+		self.lbas_dword = lbas_dword
+
+	# format: 1 bytes, dword list: 4 bytes each, 0 ended
+	def to_bytes(self) -> bytes:
+		data = struct.pack('<B', self.secPerLBA)
+		for lba in self.lbas_dword:
+			data += struct.pack('<I', lba)
+		data += struct.pack('<I', 0) # end of list
+		return data
+
+def get_header_pos(file: str) -> int | None:
+	sig = b'\x43\x61\x46\x65\x42\x61\x62\x79' # CaFeBaby
+	try:
+		with open(file, 'rb') as f:
+			data = f.read()
+			pos = data.find(sig)
+			return pos if pos != -1 else None
+	except FileNotFoundError:
+		return None
+
+def main() -> int:
+	parser = argparse.ArgumentParser(description='Install stage2 on a FAT partition')
+	parser.add_argument('-f', '--format', type=int, nargs=2, metavar=('START', 'END'), help='format the partition with start and end LBA')
+	parser.add_argument('-p', '--partition', type=int, default=1, help='partition number to install stage2 (1-4)')
+	parser.add_argument('-Y', '--yes', action='store_true', help='Accept all prompts.')
+	parser.add_argument('path', type=str, help='path to the block device or file')
+
+	yes = parser.parse_args().yes
+
+	args = parser.parse_args()
+	
+	path = Path(args.path)
+	if not Path.exists(path):
+		print(f'error: {path} does not exist')
+		return 1
+	
+	if not Path.is_block_device(path) and not Path.is_file(path):
+		print(f'error: {path} is not a block device or a file')
+		return 1
+
+	# confirmation installation prompt
+	if not yes:
+		print(f'warning: installing NovaLoader on partition {args.partition} of {args.path}')
+		print('warning: this will overwrite the MBR bootstrap code and may leave the system unbootable if it fails.')
+		confirm = input('Proceed with installation? (y/N): ')
+		if confirm.lower() != 'y':
+			print('aborted')
+			return 1
+
+	home = Path(__file__).parent
+	bin_folder = home / 'build' / 'bin'
+
+	stage1bin = bin_folder / 'stage1.bin'
+	stage2bin = bin_folder / 'stage2.bin'
+
+	device = open(path, 'r+b')
+
+	sec0 = device.read(512)
+	mbrs = [MBREntry.from_bytes(sec0[i:i+16]) for i in range(446, 510, 16)]
+
+	# check for -p
+	part_num = 1
+	if args.partition:
+		try:
+			part_num = args.partition
+			if part_num < 1 or part_num > 4:
+				print(f'error: invalid partition number {part_num}')
+				return 1
+		except ValueError:
+			print(f'error: invalid partition number {args.partition}')
+			return 1
+
+	valid_mbr = True
+
+	# check for -f
+	if args.format:
+		if not yes:
+			print(f'warning: this will format partition {args.partition} of {args.path} with a FAT filesystem')
+			confirm = input('Are you sure you want to continue? (y/N): ')
+			if confirm.lower() != 'y':
+				print('aborted')
+				return 1
+
+		try:
+			start_lba = int(args.format[0])
+			end_lba = int(args.format[1])
+			if start_lba < 0 or end_lba < 0 or start_lba >= end_lba:
+				print(f'error: invalid format range {start_lba}-{end_lba}')
+				return 1
+		except ValueError:
+			print(f'error: invalid format range {args.format[0]}-{args.format[1]}')
+			return 1
+
+		FATFS.format_file(device, start_lba, end_lba, part_num)
+		valid_mbr = True
+
+		device.seek(0)
+		sec0 = device.read(512)
+		mbrs = [MBREntry.from_bytes(sec0[i:i+16]) for i in range(446, 510, 16)]
+
+		print(f'formatted partition {part_num} of {path} with FAT filesystem from LBA {start_lba} to {end_lba}')
+	else:
+		# check if partition is valid
+		if mbrs[part_num - 1].startLBA == 0:
+			if sec0[510:512] != b'\x55\xAA':
+				print(f'error: invalid MBR signature in {path}')
+				valid_mbr = False
+
+	if not valid_mbr:
+		print(f'error: invalid MBR in {path}')
+		return 1
+
+	try:
+		fatfs = FATFS(device, mbrs[part_num - 1])
+
+		def clus(item):
+			if hasattr(item, 'firstCluster'):
+				return item.firstCluster
+			if hasattr(item, 'get_cluster'):
+				return item.get_cluster()
+			return (item.fstClusHI << 16) | item.fstClusLO
+
+		root_dir = fatfs.walk('/')
+		if not root_dir:
+			print(f'error: failed to open root directory on partition {part_num} of {path}')
+			return 1
+		
+		fatfs.create(clus(root_dir), 'boot', fat_consts.DIRECTORY | fat_consts.READ_ONLY | fat_consts.HIDDEN | fat_consts.SYSTEM)
+		boot_dir = fatfs.walk('/boot')
+		if not boot_dir:
+			print(f'error: failed to open /boot directory on partition {part_num} of {path}')
+			return 1
+
+		fatfs.create(clus(boot_dir), 'stage2.bin', fat_consts.ARCHIVE | fat_consts.READ_ONLY | fat_consts.HIDDEN | fat_consts.SYSTEM)
+		fd = fatfs.open('/boot/stage2.bin')
+		if not fd:
+			print(f'error: /boot/stage2.bin not found on partition {part_num} of {path}')
+			return 1
+
+		with open(stage2bin, 'rb') as f:
+			stage2 = f.read()
+			fatfs.write(fd, stage2, len(stage2))
+
+		# Build cluster chain
+		cluster_chain = []
+		cur = fd.entry.get_cluster()
+		while not fatfs.fat.is_eof(cur):
+			cluster_chain.append(cur)
+			cur = fatfs.fat.next_cluster(cur)
+
+		lbas = []
+		for cluster in cluster_chain:
+			lbas.append(fatfs.cluster_to_lba(cluster) + fatfs.fat.mbr.startLBA)
+
+		for lba in lbas:
+			if lba > LEGACY_MAX_LBA:
+				print(f'error: LBA {lba} exceeds legacy max LBA {LEGACY_MAX_LBA}')
+				return 1
+
+		with open(stage1bin, 'rb') as f:
+			device.seek(0)
+			stage1 = f.read(0x1B8)
+			device.write(stage1)
+
+		sig_pos = get_header_pos(str(stage1bin))
+		if sig_pos is None:
+			print(f'error: stage1 header not found in {stage1bin}')
+			return 1
+
+		header_pos = sig_pos + 8
+		header_lba_max = (0x1B8 - header_pos) // 4
+		if len(lbas) > header_lba_max + 1:
+			print(f'error: stage2 cluster count {len(lbas)} exceeds header max {header_lba_max}')
+			return 1
+
+		header = stage2_header(fatfs.fat.header_boot.secPerClus, lbas)
+		device.seek(header_pos)
+		device.write(header.to_bytes())
+
+		print(f'installed stage2 on partition {part_num} of {path}')
+
+		mbr = mbrs[part_num - 1]
+		mbr.bootInd = 0x80
+		device.seek(446 + (part_num - 1) * 16)
+		device.write(mbr.to_bytes())
+
+		print(f'Setted bootable flag on partition {part_num} of {path}')
+
+		device.close()
+
+	except ValueError as e:
+		print(f'error: {e}')
+		return 1
+
+	return 0
+
+if __name__ == "__main__":
+	exit(main())

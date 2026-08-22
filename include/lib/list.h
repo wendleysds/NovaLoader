@@ -1,0 +1,65 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * NovaLoader - Lightweight, modular, and configurable x86 bootloader for BIOS/MBR
+ *
+ * Copyright (c) 2026 Wendley Santos
+ *
+ * This file is part of NovaLoader.
+ * See the LICENSE file in the project root for license information.
+ */
+
+#ifndef _LIST_H
+#define _LIST_H
+
+#include <stddef.h>
+
+#define container_of(ptr, type, member) ({                  \
+	const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
+	(type *)( (char *)__mptr - offsetof(type,member) );})
+
+#define list_entry(ptr, type, member) \
+	container_of(ptr, type, member)
+
+#define list_for_each(pos, head) \
+	for (pos = (head)->next; pos != (head); pos = pos->next)
+
+#define list_for_each_entry(pos, head, member)                    \
+	for (pos = list_entry((head)->next, typeof(*pos), member);    \
+		&pos->member != (head);                                   \
+		pos = list_entry(pos->member.next, typeof(*pos), member))
+
+#define list_for_each_entry_safe(pos, n, head, member)                \
+	for (pos = list_entry((head)->next, typeof(*pos), member),        \
+		n = list_entry(pos->member.next, typeof(*pos), member);       \
+		&pos->member != (head);                                       \
+		pos = n, n = list_entry(n->member.next, typeof(*n), member))
+
+#define LIST_HEAD_INIT(name) { &(name), &(name) }
+
+#define LIST_HEAD(name) \
+	struct list_head name = LIST_HEAD_INIT(name)
+
+#define INIT_LIST_HEAD(ptr) \
+    do { (ptr)->next = (ptr); (ptr)->prev = (ptr); } while (0)
+
+struct list_head {
+	struct list_head *next, *prev;
+};
+
+void list_add(struct list_head *new, struct list_head *head);
+void list_remove(struct list_head *entry);
+
+static inline void list_add_head(struct list_head *new, struct list_head *head){
+	list_add(new, head);
+}
+
+static inline void list_add_tail(struct list_head *new, struct list_head *head){
+	list_add(new, head->prev);
+}
+
+static inline int list_empty(struct list_head *head){
+	return head->next == head;
+}
+
+#endif
