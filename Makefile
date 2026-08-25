@@ -1,6 +1,6 @@
 TARGET_PLATFORM ?= bios
 ARCH ?= x86
-CROSS_COMPILE ?= i686-elf-
+CROSS_COMPILE ?=
 
 # tools
 
@@ -22,24 +22,61 @@ BIN_DIR:=$(BUILD_DIR)/bin
 
 INCLUDE := -Iinclude -I$(SRC_DIR)/arch/$(ARCH)/$(TARGET_PLATFORM)/include
 
-CFLAGS := -ffreestanding -nostdlib -nostdinc -nostartfiles -nodefaultlibs  $(INCLUDE)
+CFLAGS := \
+	$(INCLUDE) \
+	-ffreestanding \
+	-nostdlib \
+	-nostdinc \
+	-nostartfiles \
+	-nodefaultlibs
 
-CFLAGS += -Wall -Werror -std=gnu11 \
-		-Wno-int-to-pointer-cast \
-		-Wno-attribute-alias -Wno-cpp \
-		-Wno-unused-function -Wno-unused-parameter
+# Language / warnings
+CFLAGS += \
+	-std=gnu11 \
+	-Wall \
+	-Werror \
+	-Wno-int-to-pointer-cast \
+	-Wno-attribute-alias \
+	-Wno-cpp \
+	-Wno-unused-function \
+	-Wno-unused-parameter \
+	-Wno-address-of-packed-member
 
-CFLAGS += -fno-align-jumps -fno-align-functions -fno-align-loops \
-		-fno-align-labels -fstrength-reduce -Os \
-		-ffunction-sections -fdata-sections \
-		-fno-asynchronous-unwind-tables \
-		-fno-unwind-tables -fno-ident
+# Optimization
+CFLAGS += \
+	-Os \
+	-fstrength-reduce \
+	-ffunction-sections \
+	-fdata-sections
+
+# Code generation / binary layout
+CFLAGS += \
+	-fno-strict-aliasing \
+	-fno-align-jumps \
+	-fno-align-functions \
+	-fno-align-loops \
+	-fno-align-labels \
+	-fno-asynchronous-unwind-tables \
+	-fno-unwind-tables \
+	-fno-ident \
+	-fno-pic \
+	-fno-stack-protector \
+	-fno-omit-frame-pointer
+
+# Floating-point / SIMD
+CFLAGS += \
+	-mno-sse \
+	-mno-mmx \
+	-mno-sse2 \
+	-mno-3dnow \
+	-mno-avx \
+	-mno-sse4a
 
 CFLAGS += -include config.h -g
 
 ASFLAGS := -f elf32 -g
 
-LDFLAGS := -nostdlib -m elf_i386 --no-warn-rwx-segments --gc-sections
+LDFLAGS := -nostdlib -m elf_i386 --no-warn-rwx-segments --gc-sections -z noexecstack
 
 ifeq ($(TARGET_PLATFORM), bios)
     CFLAGS += -m16 -march=i386

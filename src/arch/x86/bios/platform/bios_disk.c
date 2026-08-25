@@ -84,7 +84,11 @@ int bios_disk_exists(int drive_num) {
     ireg.dl = (uint8_t)drive_num;
     intcall(0x13, &ireg, &oreg);
 
-    return !_int13(&ireg, &oreg) && oreg.ah != 0;
+    if(oreg.eflags & 1){
+        return 0;
+    }
+
+    return oreg.ah != 0;
 }
 
 int bios_init_disk(int drive_num, struct block_device* dev) {
