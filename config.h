@@ -46,17 +46,6 @@
 
 #define SCRIPT_MAX_SIZE KiB(1)
 
-// --- Malloc --- //
-
-#define USE_ARENA_ALLOCATOR __n
-#if USE_ARENA_ALLOCATOR == __n
-#define BLOCK_SIZE 512
-#define HEAP_END (ALIGN_DOWN(KiB(64), BLOCK_SIZE))
-#define SLAB_SIZES { 8, 16, 32, 64, 128, 256 }
-#else
-#define HEAP_END (KiB(64))
-#endif
-
 // --- Commands --- //
 
 #define SET_CMD __y
