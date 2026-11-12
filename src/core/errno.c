@@ -12,7 +12,3 @@
 #include <core/platform.h>
 
 int errno = 0;
-
-void perror(const char *restrict str){
-	printf("%s: %d\n", str, errno);
-}

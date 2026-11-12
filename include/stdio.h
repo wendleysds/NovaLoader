@@ -22,7 +22,6 @@ void set_cursor(int x, int y);
 void get_cursor(int *x, int *y);
 void get_resolution(int *w, int *h);
 
-void perror(const char *restrict str);
 void __no_return panic(const char *restrict str);
 
 #endif

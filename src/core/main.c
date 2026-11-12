@@ -33,12 +33,13 @@ static int __disks(){
 }
 
 int main(void){
+	malloc_init();
+
 	if((errno = platform.init())){
 		panic("init");
 	}
 
 	INIT(system);
-	malloc_init();
 	INIT(terminal);
 	INIT(time);
 	INIT(input);
@@ -93,7 +94,6 @@ static __no_return void shell(){
 }
 
 void __no_return panic(const char *restrict str){
-	printf("\nPANIC: ");
-	perror(str);
+	printf("\nPANIC(%d): %s\n", errno, str);
 	while(1) asm volatile("pause" ::: "memory");
 }
