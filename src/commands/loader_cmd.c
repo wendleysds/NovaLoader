@@ -39,7 +39,7 @@ static int load_cmd(int argc, char** argv) {
 				current_image.loader->ops->unload(current_image.ctx);
 			}
 
-			int res = l->ops->load(file, &current_image.ctx, argv + 2);
+			res = l->ops->load(file, &current_image.ctx, argv + 2);
 			if(res != 0){
 				printf("Failed\n");
 				goto out;

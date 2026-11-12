@@ -381,6 +381,8 @@ int fat_read(FILE *_file, char *buffer, size_t size) {
         remaining = file->size - file->pos;
     }
 
+    int err = 0;
+
     if (remaining == 0) return 0;
 
     uint32_t clusterSize = fat->headers.boot.bytesPerSec * fat->headers.boot.secPerClus;
@@ -396,15 +398,15 @@ int fat_read(FILE *_file, char *buffer, size_t size) {
         uint32_t lba = cluster_to_lba(fat, cluster);
 
         if (offInCluster == 0 && toCopy == clusterSize) {
-            if (disk_read(fat->dev, lba, (uint8_t*)buffer + totalRead, fat->headers.boot.secPerClus)) {
-                return -EIO;
+            if ((err = disk_read(fat->dev, lba, (uint8_t*)buffer + totalRead, fat->headers.boot.secPerClus))) {
+                return err;
             }
         } 
         else {
             if (!bounceBuf) return -EINVAL; 
 
-            if (disk_read(fat->dev, lba, bounceBuf, fat->headers.boot.secPerClus)) {
-                return -EIO;
+            if ((err = disk_read(fat->dev, lba, bounceBuf, fat->headers.boot.secPerClus))) {
+                return err;
             }
 
             memcpy(buffer + totalRead, bounceBuf + offInCluster, toCopy);
