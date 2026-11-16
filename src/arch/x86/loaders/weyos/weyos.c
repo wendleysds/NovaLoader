@@ -46,7 +46,7 @@ static int weyos_probe(FILE *file){
 	return 0;
 }
 
-static int weyos_load(FILE *file, void **out_ctx, char *args[]){
+static int __optimize("O0") weyos_load(FILE *file, void **out_ctx, char *args[]){
 	struct boot_tag_setup header;
 	if(read_setup(&header, file)){
 		return errno;

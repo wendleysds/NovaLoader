@@ -136,7 +136,7 @@ static uint32_t next_cluster(struct fat *fat, uint32_t cluster) {
 	uint32_t entOffset = fatOffset % bytesPerSec;
 
 	uint8_t sector[1024];
-	uint8_t sectorsToRead = (fat->type == 12 && (entOffset == bytesPerSec - 1)) ? 2 : 1;
+	uint8_t sectorsToRead = (fat->type == FAT_TYPE_12 && (entOffset == bytesPerSec - 1)) ? 2 : 1;
 
 	if(disk_read(fat->dev, fatSecNum, sector, sectorsToRead)){
 		return fat_get_eof(fat);
